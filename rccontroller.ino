@@ -35,13 +35,14 @@
 
 #define HORN_OUT_PIN 7
 #define LIGHTS_OUT_PIN 9
-#define BLINK_OUT_PIN 10
+// Note: D13 is also routed to LED on the Arduino
+#define BLINK_OUT_PIN 13
 #define STARTUP_OUT_PIN 4
 // Note: D13 is also routed to LED on the Arduino
-#define BACKUPBEEPER_OUT_PIN 13
+#define BACKUPBEEPER_OUT_PIN 10
 #define BREAKLIGHT_OUT_PIN A0
 
-#define ANALOG_IN_PIN A0
+#define ANALOG_IN_PIN A7
 
 // Number of switches coded into the AUX channel
 #define NUMAUXSW 5
@@ -163,42 +164,18 @@ void setup()
 	pinMode(LIGHTS_OUT_PIN, OUTPUT);
 	pinMode(BLINK_OUT_PIN, OUTPUT);
 	pinMode(BACKUPBEEPER_OUT_PIN, OUTPUT);
-#ifndef DEBUG
 	pinMode(BREAKLIGHT_OUT_PIN, OUTPUT);
-#else
-	pinMode(ANALOG_IN_PIN, INPUT);
-#endif
 	pinMode(STARTUP_OUT_PIN, OUTPUT);
 
+	pinMode(ANALOG_IN_PIN, INPUT);
 
-#ifdef DEBUG2
-	pinMode(4, OUTPUT);
-	analogWrite(4, 170);
-	pinMode(5, OUTPUT);
-	analogWrite(5, 170);
-	pinMode(6, OUTPUT);
-	analogWrite(6, 170);
-	//pinMode(7, OUTPUT); // no
-	analogWrite(7, 127); // no
-	pinMode(9, OUTPUT); // no
-	analogWrite(9, 127); // no
-	//pinMode(10, OUTPUT); //no
-	//analogWrite(10, 63); //no
-	// 3
-	// 2 works
-	pinMode(11, OUTPUT);
-	analogWrite(11, 170);
-	pinMode(12, OUTPUT);
-	analogWrite(12, 170);
-	pinMode(13, OUTPUT);
-	analogWrite(13, 170);
-#endif
+	// TODO: Check what signal is needed for sound module. A simple ENable doesn't seem to do it...
+	digitalWrite(STARTUP_OUT_PIN, 1);
 
 	steeringServo.attach(STEERING_OUT_PIN);
 
 	// using the EnableInterrupt library, attach the interrupts
 	// used to read the channels
-
 	enableInterrupt(CHAN1_IN_PIN, rx_isr1, CHANGE);
 	enableInterrupt(CHAN2_IN_PIN, rx_isr2, CHANGE);
 	enableInterrupt(CHAN3_IN_PIN, rx_isr3, CHANGE);
