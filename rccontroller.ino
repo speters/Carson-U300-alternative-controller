@@ -109,14 +109,12 @@ inline uint8_t dohbridge(uint16_t ThrottleIn, uint8_t hbridgepin0, uint8_t hbrid
 		// drive forwards
 		digitalWrite(hbridgepin0, 0);
 		analogWrite(hbridgepin1, map(ThrottleIn, (SERVOMSMID + SERVONEUTR), SERVOMSMAX, HBRIDGEMIN, 255));
-		//Serial.print("#0=0,#1=");Serial.println(map(ThrottleIn, (SERVOMSMID + SERVONEUTR), SERVOMSMAX, 0, 255));
 		motorspeed = 1;
 	} else if ((ThrottleIn <= (SERVOMSMID - SERVONEUTR)) && (ThrottleIn >= SERVOMSMIN -50) && motorspeed <= 0)
 	{
 		// drive backwards
 		digitalWrite(hbridgepin1, 0);
 		analogWrite(hbridgepin0, map(ThrottleIn, SERVOMSMIN, (SERVOMSMID - SERVONEUTR), 255, HBRIDGEMIN));
-		//Serial.print("#1=0,#0=");Serial.println(map(ThrottleIn, SERVOMSMIN, (SERVOMSMID - SERVONEUTR), 255, 0));
 		motorspeed = -1;
 	} else
 	{
@@ -127,7 +125,6 @@ inline uint8_t dohbridge(uint16_t ThrottleIn, uint8_t hbridgepin0, uint8_t hbrid
 		motorspeed = 0;
 	}
 
-	//Serial.print(motorspeed); Serial.print(" ");Serial.println(ThrottleIn);
 	return motorspeed;
 }
 
@@ -215,9 +212,9 @@ void loop()
 	// local copy of update flags
 	static uint8_t bUpdateFlags;
 #ifdef DEBUG
-	static uint8_t doprint = 1;
+	static uint8_t doprint = 1, doserial = 1;
 #else
-	static uint8_t doprint = 0;
+	static uint8_t doprint = 0, doserial = 0;
 #endif
 
 	static uint32_t lasthbridgedelay = -1;
@@ -233,7 +230,7 @@ void loop()
 
 
 	// check shared update flags to see if any channels have a new signal
-	if (bUpdateFlagsShared)
+	if (bUpdateFlagsShared && (doserial == 0))
 	{
 		uint8_t oldSREG;
 		oldSREG = SREG;	// save status register
@@ -280,11 +277,25 @@ void loop()
 			{
 				serialreceivestate = SERIALSTATECHAN;
 			}
-			else if (IncomingByte == '?')
+			else if (IncomingByte == '$')
 			{
 				// Force printing values
 				lastdelaytime = 0;
 				doprint = 1;
+				// serialreceivestate = SERIALSTATEIDLE; // just for the coding style
+			}
+			else if (IncomingByte == '?')
+			{
+				// Small help text
+				Serial.print("\r\n\r\n rccontroller "__DATE__" by Soenke J. Peters\r\n\r\n");
+				Serial.print(" ?    this help\r\n");
+				Serial.print(" $    print values\r\n");
+				Serial.print(" !    stop printing values\r\n");
+				Serial.print(" Cx   switch to channel x with x in [0..6]\r\n");
+				Serial.print(" 123  send value 123 to current channel\r\n");
+				Serial.print(" 1212,1500,1750    bulk update of channels\r\n");
+				Serial.print(" #    switch to serial input of values\r\n");
+				Serial.print(" +    switch to RC input of values\r\n\r\n");
 				// serialreceivestate = SERIALSTATEIDLE; // just for the coding style
 			}
 			else if (IncomingByte == '!')
@@ -293,6 +304,19 @@ void loop()
 				doprint = 0;
 				// serialreceivestate = SERIALSTATEIDLE; // just for the coding style
 			}
+			else if (IncomingByte == '#')
+			{
+				// Set serial as receiver
+				doserial = 1;
+				// serialreceivestate = SERIALSTATEIDLE; // just for the coding style
+			}
+			else if (IncomingByte == '+')
+			{
+				// Set RC as receiver
+				doserial = 0;
+				// serialreceivestate = SERIALSTATEIDLE; // just for the coding style
+			}
+
 			else if (isdigit(IncomingByte) )
 			{
 				serialval = IncomingByte - 48;
