@@ -7,7 +7,7 @@
 
 //#define DEBUG
 // serial output of values
-#define SEROUTPUT
+#define USESERIAL
 
 // if tx has switches modded to use a R2R resistor ladder on chan 5
 //#define MODDEDTX
@@ -29,6 +29,8 @@
 #define CHAN4_IN_PIN A3
 #define CHAN5_IN_PIN A4
 #define CHAN6_IN_PIN A5
+
+#define MAXCHAN 6
 
 // This pin outputs chan6 on a modded tx
 #define STEERING_OUT_PIN 8
@@ -70,8 +72,6 @@
 #include <EnableInterrupt.h>
 
 uint8_t  AUXSwitches[NUMAUXSW] = {0};
-
-uint16_t analogVal = 0;
 
 Servo steeringServo;
 
@@ -133,7 +133,7 @@ inline uint8_t dohbridge(uint16_t ThrottleIn, uint8_t hbridgepin0, uint8_t hbrid
 
 void setup()
 {
-#ifdef SEROUTPUT
+#ifdef USESERIAL
 	Serial.begin(115200);
 #endif
 
@@ -193,31 +193,43 @@ void loop()
 	// these are declared static so that their values will be retained
 	// between calls to loop.
 
-	static uint16_t Motor1ThrottleIn = 0;
-	// determines the motor state to insert a delay between switching fwd/back, backward < 0 < forward
-	static int8_t motor1_speed = 0;
+	static uint16_t rxdata[MAXCHAN+1] = {0};
 
-	static uint16_t Motor2ThrottleIn = 0;
-	// determines the motor state to insert a delay between switching fwd/back, backward < 0 < forward
-	static int8_t motor2_speed = 0;
-
-	static uint16_t Motor3ThrottleIn = 0;
-	// determines the motor state to insert a delay between switching fwd/back, backward < 0 < forward
-	static int8_t motor3_speed = 0;
-
-	static uint16_t SteeringIn;
+// TODO: get rid of these ugly defines
+#define	analogVal rxdata[0]
+#define SteeringIn rxdata[1]
+#define Motor1ThrottleIn rxdata[2]
+#define Motor2ThrottleIn rxdata[3]
+#define Motor3ThrottleIn rxdata[4]
 #ifndef MODDEDTX
-	static uint16_t Switch1In;
-	static uint16_t Switch2In;
+#define Switch1In rxdata[5]
+#define Switch2In rxdata[6]
 #else
-	static uint16_t AuxIn;			// Value to be converted back into switch settings
-	static uint16_t Aux2In;
+#define AuxIn rxdata[5]
+#define Aux2In rxdata[6]
 #endif
+
+	// determines the motor state to insert a delay between switching fwd/back, backward < 0 < forward
+	static int8_t motor1_speed = 0, motor2_speed = 0, motor3_speed = 0;
 
 	// local copy of update flags
 	static uint8_t bUpdateFlags;
+#ifdef DEBUG
+	static uint8_t doprint = 1;
+#else
+	static uint8_t doprint = 0;
+#endif
 
 	static uint32_t lasthbridgedelay = -1;
+
+#define SERIALSTATEIDLE 0
+#define SERIALSTATECHAN 1
+#define SERIALSTATECHANNUM 2
+#define SERIALSTATESEP 3
+#define SERIALSTATEVAL 4
+
+	static uint8_t serialreceivestate = SERIALSTATEIDLE, serialchan = 1, IncomingByte;
+	static uint32_t serialval;
 
 
 	// check shared update flags to see if any channels have a new signal
@@ -247,7 +259,7 @@ void loop()
 		RC_VALUE_TO_VAR(6, Switch2In);
 #else
 		RC_VALUE_TO_VAR(5, AuxIn);
-		RC_VALUE_TO_VAR(5, Aux2In); // TODO: To be used for mode switching?
+		RC_VALUE_TO_VAR(6, Aux2In); // TODO: To be used for mode switching?
 #endif
 
 		// clear shared copy of updated flags as we have already taken the updates
@@ -256,6 +268,111 @@ void loop()
 
 		SREG = oldSREG;	// restore interrupt state
 	}
+
+#ifdef USESERIAL
+	if (Serial.available() > 0)
+	{
+		IncomingByte = Serial.read();
+
+		if (serialreceivestate == SERIALSTATEIDLE)
+		{
+			if (IncomingByte == 'C' || IncomingByte == 'c')
+			{
+				serialreceivestate = SERIALSTATECHAN;
+			}
+			else if (IncomingByte == '?')
+			{
+				// Force printing values
+				lastdelaytime = 0;
+				doprint = 1;
+				// serialreceivestate = SERIALSTATEIDLE; // just for the coding style
+			}
+			else if (IncomingByte == '!')
+			{
+				// Stop printing values
+				doprint = 0;
+				// serialreceivestate = SERIALSTATEIDLE; // just for the coding style
+			}
+			else if (isdigit(IncomingByte) )
+			{
+				serialval = IncomingByte - 48;
+				serialreceivestate = SERIALSTATEVAL;
+			}
+			else
+			{
+				// serialreceivestate = SERIALSTATEIDLE; // just for the coding style
+			}
+		} else if (serialreceivestate == SERIALSTATECHAN)
+		{
+			// BUG: Allows "chaAhaan=" and similar things (but allows for fewer states)
+			if (IncomingByte == 'H' || IncomingByte == 'h'
+					|| IncomingByte == 'A' || IncomingByte == 'a'
+					|| IncomingByte == 'N' || IncomingByte == 'n'
+					|| IncomingByte == ':' || IncomingByte == '=')
+			{
+				serialreceivestate = SERIALSTATECHAN;
+			}
+			else if (isdigit(IncomingByte) && ((IncomingByte - 48) >= 0) && ((IncomingByte - 48) < (MAXCHAN + 1)))
+			{
+				serialchan = (IncomingByte - 48);
+				serialreceivestate = SERIALSTATEIDLE;
+			}
+			else
+			{
+				serialreceivestate = SERIALSTATEIDLE;
+			}
+		} else if (serialreceivestate == SERIALSTATEVAL)
+		{
+			if (isdigit(IncomingByte) )
+			{
+				serialval *= 10;
+				serialval += IncomingByte - 48;
+				serialreceivestate = SERIALSTATEVAL;
+			} else if (IncomingByte == 'C' || IncomingByte == 'c')
+			{
+				if (serialchan > 0)
+				{
+					bUpdateFlags |= (1 << ( serialchan - 1)) ;
+				}
+				rxdata[serialchan] = serialval;
+				serialval = 0;
+				serialreceivestate = SERIALSTATECHAN;
+			} else if (IncomingByte == ',' || IncomingByte == ';')
+			{
+				if (serialchan > 0)
+				{
+					bUpdateFlags |= (1 << ( serialchan - 1)) ;
+				}
+				rxdata[serialchan] = serialval;
+				serialval = 0;
+				if (serialchan < MAXCHAN)
+				{
+					// bulk update of channels, go for next channel data
+					serialchan++;
+					serialreceivestate = SERIALSTATEVAL;
+				}
+				else
+				{
+					serialreceivestate = SERIALSTATEIDLE;
+				}
+			}
+			else
+			{
+				if (serialchan > 0)
+				{
+					bUpdateFlags |= (1 << ( serialchan - 1)) ;
+				}
+				rxdata[serialchan] = serialval;
+				serialval = 0;
+				serialreceivestate = SERIALSTATEIDLE;
+			}
+		}
+		else
+		{
+			serialreceivestate = SERIALSTATEIDLE;
+		}
+	}
+#endif
 
 #ifndef MODDEDTX
 	if (bUpdateFlags & (1 << (5 - 1 )))
@@ -349,8 +466,8 @@ void loop()
 	steeringServo.writeMicroseconds(analogVal);
 #endif
 
-#ifdef SEROUTPUT
-	if (((millis() - lastdelaytime) > 500)) // && bUpdateFlags)
+#ifdef USESERIAL
+	if (doprint && ((millis() - lastdelaytime) > 500)) // && bUpdateFlags)
 	{
 #ifdef DEBUG
 		Serial.print("AnalogMapped2Servo=");
