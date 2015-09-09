@@ -40,7 +40,6 @@
 // Note: D13 is also routed to LED on the Arduino
 #define BLINK_OUT_PIN 13
 #define STARTUP_OUT_PIN 4
-// Note: D13 is also routed to LED on the Arduino
 #define BACKUPBEEPER_OUT_PIN 10
 #define BREAKLIGHT_OUT_PIN A0
 
