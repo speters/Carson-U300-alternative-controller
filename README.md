@@ -3,6 +3,8 @@
 This project is an alternative controller for the Carson U300 Unimog RC car.
 It replaces the original EM78P540N microcontroller (which was dead on my son's car) and its closed-source firmware with an "Arduino pro mini" Atmel ATmega328p controller and open-source firmware.
 
+See http://www.rc-forum.de/showthread.php?4341586-Carson-Unimog-U300-Elektronik-Umbau-%28Ersetzen-des-%B5C-Ansteuerung-Soundmodul-%29
+
 ## Contents
 
  * schematics.svg
