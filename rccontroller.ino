@@ -5,6 +5,8 @@
  * 2015-08-17 by Sönke J. Peters
  */
 
+#include <Arduino.h>
+
 //#define DEBUG
 // serial output of values
 #define USESERIAL
@@ -12,15 +14,17 @@
 // if tx has switches modded to use a R2R resistor ladder on chan 5
 //#define MODDEDTX
 
-// Main motor
-#define MOTOR1_HBRIDGEPIN0 11
-#define MOTOR1_HBRIDGEPIN1 3
-// Winch
+//#define ORIGINAL_SOUND_MODULE // currently unused, TODO: get to know how it works, implement
+
+// Main motor (pwm speed controlled)
+#define MOTOR1_HBRIDGEPIN0 6
+#define MOTOR1_HBRIDGEPIN1 5
+// Winch (fwd/off/rev only)
 #define MOTOR2_HBRIDGEPIN0 12
 #define MOTOR2_HBRIDGEPIN1 2
-// Platform lift motor
-#define MOTOR3_HBRIDGEPIN0 5
-#define MOTOR3_HBRIDGEPIN1 6
+// Platform lift motor (fwd/off/rev only)
+#define MOTOR3_HBRIDGEPIN0 11
+#define MOTOR3_HBRIDGEPIN1 7
 
 // channel in pins from the receiver
 #define CHAN1_IN_PIN A6
@@ -35,15 +39,26 @@
 // This pin outputs chan6 on a modded tx
 #define STEERING_OUT_PIN 8
 
-#define HORN_OUT_PIN 7
 #define LIGHTS_OUT_PIN 9
-// Note: D13 is also routed to LED on the Arduino
-#define BLINK_OUT_PIN 13
-#define STARTUP_OUT_PIN 4
-#define BACKUPBEEPER_OUT_PIN 10
+#define BLINK_OUT_PIN 10
 #define BREAKLIGHT_OUT_PIN A0
-
 #define ANALOG_IN_PIN A7
+
+#ifdef ORIGINAL_SOUND_MODULE
+#define STARTUP_OUT_PIN 7
+// Note: D13 is also routed to LED on the Arduino
+#define BACKUPBEEPER_OUT_PIN 13
+#define HORN_OUT_PIN 3
+#else // ORIGINAL_SOUND_MODULE
+#define SPEAKER_OUT_PIN 3
+
+#include "soundplay.h"
+
+#include "sounds/sound_crankup.h"
+#include "sounds/sound_diesel.h"
+#include "sounds/sound_hupe.h"
+#include "sounds/sound_feuerwehr_btc.h"
+#endif // ORIGINAL_SOUND_MODULE
 
 // Number of switches coded into the AUX channel
 #define NUMAUXSW 5
@@ -62,6 +77,9 @@
 #define HBRIDGEDELAY 20
 // Minimal PWM value to make motor spin
 #define HBRIDGEMIN 40
+
+// #define  __STDC_LIMIT_MACROS
+#include <stdint.h>
 
 #include <Servo.h>
 
@@ -101,20 +119,22 @@ RX_ISR(6);
 
 unsigned long lastdelaytime;
 
-inline uint8_t dohbridge(uint16_t ThrottleIn, uint8_t hbridgepin0, uint8_t hbridgepin1, int8_t motorspeed)
-{		// Motor 1 (main motor) H-bridge
+inline uint8_t dohbridge_pwm(uint16_t ThrottleIn, uint8_t hbridgepin0, uint8_t hbridgepin1, int8_t motorspeed)
+{
 	if ((ThrottleIn >= (SERVOMSMID + SERVONEUTR)) && (ThrottleIn <= SERVOMSMAX + 50) && motorspeed >= 0)
 	{
 		// drive forwards
 		digitalWrite(hbridgepin0, 0);
-		analogWrite(hbridgepin1, map(ThrottleIn, (SERVOMSMID + SERVONEUTR), SERVOMSMAX, HBRIDGEMIN, 255));
-		motorspeed = 1;
+		analogWrite(hbridgepin1, map(ThrottleIn, (SERVOMSMID + SERVONEUTR), SERVOMSMAX, HBRIDGEMIN, UINT8_MAX));
+		// motorspeed = 1;
+		motorspeed = map(ThrottleIn, (SERVOMSMID + SERVONEUTR), SERVOMSMAX, 1, INT8_MAX);
 	} else if ((ThrottleIn <= (SERVOMSMID - SERVONEUTR)) && (ThrottleIn >= SERVOMSMIN -50) && motorspeed <= 0)
 	{
 		// drive backwards
 		digitalWrite(hbridgepin1, 0);
-		analogWrite(hbridgepin0, map(ThrottleIn, SERVOMSMIN, (SERVOMSMID - SERVONEUTR), 255, HBRIDGEMIN));
-		motorspeed = -1;
+		analogWrite(hbridgepin0, map(ThrottleIn, SERVOMSMIN, (SERVOMSMID - SERVONEUTR), UINT8_MAX, HBRIDGEMIN));
+		// motorspeed = -1;
+		motorspeed = map(ThrottleIn, SERVOMSMIN, (SERVOMSMID - SERVONEUTR), INT8_MIN +1, -1);
 	} else
 	{
 		// stop
@@ -127,6 +147,35 @@ inline uint8_t dohbridge(uint16_t ThrottleIn, uint8_t hbridgepin0, uint8_t hbrid
 	return motorspeed;
 }
 
+inline uint8_t dohbridge_onoffon(uint16_t ThrottleIn, uint8_t hbridgepin0, uint8_t hbridgepin1, int8_t motorspeed)
+{
+	if ((ThrottleIn >= (SERVOMSMID + SERVONEUTR)) && (ThrottleIn <= SERVOMSMAX + 50) && motorspeed >= 0)
+	{
+		// drive forwards
+		digitalWrite(hbridgepin0, 0);
+		digitalWrite(hbridgepin1, 1);
+		// motorspeed = 1;
+		motorspeed = map(ThrottleIn, (SERVOMSMID + SERVONEUTR), SERVOMSMAX, 1, INT8_MAX);
+	} else if ((ThrottleIn <= (SERVOMSMID - SERVONEUTR)) && (ThrottleIn >= SERVOMSMIN -50) && motorspeed <= 0)
+	{
+		// drive backwards
+		digitalWrite(hbridgepin1, 0);
+		digitalWrite(hbridgepin0, 1);
+		// motorspeed = -1;
+		motorspeed = map(ThrottleIn, SERVOMSMIN, (SERVOMSMID - SERVONEUTR), INT8_MIN +1, -1);
+	} else
+	{
+		// stop
+		digitalWrite(hbridgepin0, 0);
+		digitalWrite(hbridgepin1, 0);
+
+		motorspeed = 0;
+	}
+
+	return motorspeed;
+}
+
+uint8_t backgroundsoundindex;
 void setup()
 {
 #ifdef USESERIAL
@@ -156,17 +205,20 @@ void setup()
 	pinMode(CHAN6_IN_PIN, INPUT);
 
 	//pinMode(STEERING_OUT_PIN, OUTPUT);
+#ifdef ORIGINAL_SOUND_MODULE
 	pinMode(HORN_OUT_PIN, OUTPUT);
-	pinMode(LIGHTS_OUT_PIN, OUTPUT);
-	pinMode(BLINK_OUT_PIN, OUTPUT);
 	pinMode(BACKUPBEEPER_OUT_PIN, OUTPUT);
-	pinMode(BREAKLIGHT_OUT_PIN, OUTPUT);
 	pinMode(STARTUP_OUT_PIN, OUTPUT);
-
-	pinMode(ANALOG_IN_PIN, INPUT);
-
 	// TODO: Check what signal is needed for sound module. A simple ENable doesn't seem to do it...
 	digitalWrite(STARTUP_OUT_PIN, 1);
+#else // ORIGINAL_SOUND_MODULE
+	pinMode(SPEAKER_OUT_PIN, OUTPUT);
+#endif // ORIGINAL_SOUND_MODULE
+	pinMode(LIGHTS_OUT_PIN, OUTPUT);
+	pinMode(BLINK_OUT_PIN, OUTPUT);
+	pinMode(BREAKLIGHT_OUT_PIN, OUTPUT);
+
+	pinMode(ANALOG_IN_PIN, INPUT);
 
 	steeringServo.attach(STEERING_OUT_PIN);
 
@@ -178,6 +230,15 @@ void setup()
 	enableInterrupt(CHAN4_IN_PIN, rx_isr4, CHANGE);
 	enableInterrupt(CHAN5_IN_PIN, rx_isr5, CHANGE);
 	enableInterrupt(CHAN6_IN_PIN, rx_isr6, CHANGE);
+
+#ifndef ORIGINAL_SOUND_MODULE
+	soundplayer_setup();
+
+	backgroundsoundindex = soundplayer_play((uint16_t) &sound_diesel,
+				sound_diesel_len, SOUND_FORMAT_PCM, MAXCNTRELOAD, finishplay_repeat, 0);
+	soundplayer_play_repeat((uint16_t) &sound_crankup,
+			sound_crankup_len, SOUND_FORMAT_PCM, 3);
+#endif // ORIGINAL_SOUND_MODULE
 
 	lastdelaytime = millis();
 }
@@ -368,7 +429,7 @@ void loop()
 				}
 				rxdata[serialchan] = serialval;
 				serialval = 0;
-				if (serialchan < MAXCHAN)
+				if (serialchan <= MAXCHAN)
 				{
 					// bulk update of channels, go for next channel data
 					serialchan++;
@@ -376,6 +437,7 @@ void loop()
 				}
 				else
 				{
+					serialchan = 0;
 					serialreceivestate = SERIALSTATEIDLE;
 				}
 			}
@@ -413,11 +475,18 @@ void loop()
 	{
 		if ((Switch2In > (SERVOMSMID + 2*SERVONEUTR)) || (Switch2In < (SERVOMSMID - 2*SERVONEUTR)))
 		{
+#ifdef ORIGINAL_SOUND_MODULE
 			digitalWrite(HORN_OUT_PIN, 1);
+#else // ORIGINAL_SOUND_MODULE
+			soundplayer_play_ds((uint16_t) &sound_feuerwehr_btc, sound_feuerwehr_btc_len, SOUND_FORMAT_BTC,
+					20);
+#endif // ORIGINAL_SOUND_MODULE
 		}
 		else
 		{
+#ifdef ORIGINAL_SOUND_MODULE
 			digitalWrite(HORN_OUT_PIN, 0);
+#endif // ORIGINAL_SOUND_MODULE
 		}
 	}
 
@@ -475,9 +544,14 @@ void loop()
 	// h-bridges don't get updated so often to insert a dead time between fwd/back switching
 	if ((millis() - lasthbridgedelay) > HBRIDGEDELAY)
 	{
-		motor1_speed = dohbridge(Motor1ThrottleIn, MOTOR1_HBRIDGEPIN0, MOTOR1_HBRIDGEPIN1, motor1_speed);
-		motor2_speed = dohbridge(Motor2ThrottleIn, MOTOR2_HBRIDGEPIN0, MOTOR2_HBRIDGEPIN1, motor2_speed);
-		motor3_speed = dohbridge(Motor3ThrottleIn, MOTOR3_HBRIDGEPIN0, MOTOR3_HBRIDGEPIN1, motor3_speed);
+		motor1_speed = dohbridge_pwm(Motor1ThrottleIn, MOTOR1_HBRIDGEPIN0, MOTOR1_HBRIDGEPIN1, motor1_speed); // use pwm
+		motor2_speed = dohbridge_onoffon(Motor2ThrottleIn, MOTOR2_HBRIDGEPIN0, MOTOR2_HBRIDGEPIN1, motor2_speed);
+		motor3_speed = dohbridge_onoffon(Motor3ThrottleIn, MOTOR3_HBRIDGEPIN0, MOTOR3_HBRIDGEPIN1, motor3_speed);
+
+#ifndef ORIGINAL_SOUND_MODULE
+		soundqueue[backgroundsoundindex].speed = map(abs(motor1_speed), INT8_MAX, 0,
+				(soundqueue[backgroundsoundindex].format == SOUND_FORMAT_PCM ? MAXCNTRELOAD : MAXCNTRELOAD>>1)- (255 - 170), (soundqueue[backgroundsoundindex].format == SOUND_FORMAT_PCM ? MAXCNTRELOAD : MAXCNTRELOAD>>1));
+#endif // ORIGINAL_SOUND_MODULE
 
 		lasthbridgedelay = millis();
 	}
@@ -522,5 +596,12 @@ void loop()
 #endif
 
 	bUpdateFlags = 0;
+
+	static uint32_t lastblinklooptime = 0;
+	if ((millis() - lastblinklooptime) > 500)
+	{
+
+		lastblinklooptime = millis();
+	}
 
 }
