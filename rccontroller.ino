@@ -20,8 +20,8 @@
 #define MOTOR1_HBRIDGEPIN0 6
 #define MOTOR1_HBRIDGEPIN1 5
 // Winch (fwd/off/rev only)
-#define MOTOR2_HBRIDGEPIN0 12
-#define MOTOR2_HBRIDGEPIN1 2
+#define MOTOR2_HBRIDGEPIN0 2
+#define MOTOR2_HBRIDGEPIN1 12
 // Platform lift motor (fwd/off/rev only)
 #define MOTOR3_HBRIDGEPIN0 11
 #define MOTOR3_HBRIDGEPIN1 7
@@ -40,14 +40,14 @@
 #define STEERING_OUT_PIN 8
 
 #define LIGHTS_OUT_PIN 9
-#define BLINK_OUT_PIN 10
-#define BREAKLIGHT_OUT_PIN A0
+#define BLINK_OUT_PIN 13
+#define BREAKLIGHT_OUT_PIN 10
 #define ANALOG_IN_PIN A7
 
 #ifdef ORIGINAL_SOUND_MODULE
 #define STARTUP_OUT_PIN 7
 // Note: D13 is also routed to LED on the Arduino
-#define BACKUPBEEPER_OUT_PIN 13
+#define BACKUPBEEPER_OUT_PIN A0
 #define HORN_OUT_PIN 3
 #else // ORIGINAL_SOUND_MODULE
 #define SPEAKER_OUT_PIN 3
@@ -462,7 +462,8 @@ void loop()
 #ifndef MODDEDTX
 	if (bUpdateFlags & (1 << (5 - 1 )))
 	{
-		if ((Switch1In > (SERVOMSMID + 2*SERVONEUTR)) || (Switch1In < (SERVOMSMID - 2*SERVONEUTR)))
+		if (((Switch1In > (SERVOMSMID + 2*SERVONEUTR)) || (Switch1In < (SERVOMSMID - 2*SERVONEUTR))) &&
+				Switch1In < SERVOMSMAX + 2*SERVONEUTR && Switch1In > SERVOMSMAX - 2*SERVONEUTR)
 		{
 			digitalWrite(LIGHTS_OUT_PIN, 1);
 		}
@@ -473,7 +474,8 @@ void loop()
 	}
 	if (bUpdateFlags & (1 << (6 - 1 )))
 	{
-		if ((Switch2In > (SERVOMSMID + 2*SERVONEUTR)) || (Switch2In < (SERVOMSMID - 2*SERVONEUTR)))
+		if (((Switch2In > (SERVOMSMID + 2*SERVONEUTR)) || (Switch2In < (SERVOMSMID - 2*SERVONEUTR))) &&
+				Switch2In < SERVOMSMAX + 2*SERVONEUTR && Switch2In > SERVOMSMAX - 2*SERVONEUTR)
 		{
 #ifdef ORIGINAL_SOUND_MODULE
 			digitalWrite(HORN_OUT_PIN, 1);
