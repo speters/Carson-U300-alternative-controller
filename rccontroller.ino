@@ -27,7 +27,7 @@
 #define MOTOR3_HBRIDGEPIN1 7
 
 // channel in pins from the receiver
-#define CHAN1_IN_PIN A6
+#define CHAN1_IN_PIN A0
 #define CHAN2_IN_PIN A1
 #define CHAN3_IN_PIN A2
 #define CHAN4_IN_PIN A3
@@ -38,16 +38,17 @@
 
 // This pin outputs chan6 on a modded tx
 #define STEERING_OUT_PIN 8
+#define AUXOUT 4
 
 #define LIGHTS_OUT_PIN 9
 #define BLINK_OUT_PIN 13
-#define BREAKLIGHT_OUT_PIN 10
+#define BACKUP_LIGHTS_OUT_PIN 10
 #define ANALOG_IN_PIN A7
 
 #ifdef ORIGINAL_SOUND_MODULE
 #define STARTUP_OUT_PIN 7
 // Note: D13 is also routed to LED on the Arduino
-#define BACKUPBEEPER_OUT_PIN A0
+#define BACKUPBEEPER_OUT_PIN A6
 #define HORN_OUT_PIN 3
 #else // ORIGINAL_SOUND_MODULE
 #define SPEAKER_OUT_PIN 3
@@ -216,7 +217,7 @@ void setup()
 #endif // ORIGINAL_SOUND_MODULE
 	pinMode(LIGHTS_OUT_PIN, OUTPUT);
 	pinMode(BLINK_OUT_PIN, OUTPUT);
-	pinMode(BREAKLIGHT_OUT_PIN, OUTPUT);
+	pinMode(BACKUP_LIGHTS_OUT_PIN, OUTPUT);
 
 	pinMode(ANALOG_IN_PIN, INPUT);
 
@@ -349,6 +350,8 @@ void loop()
 				// Small help text
 				Serial.print("\r\n\r\n rccontroller "__DATE__" by Soenke J. Peters\r\n\r\n");
 				Serial.print(" ?    this help\r\n");
+				Serial.print(" s    mute sound\r\n");
+				Serial.print(" S    unmute sound\r\n");
 				Serial.print(" $    print values\r\n");
 				Serial.print(" !    stop printing values\r\n");
 				Serial.print(" Cx   switch to channel x with x in [0..6]\r\n");
@@ -357,6 +360,16 @@ void loop()
 				Serial.print(" #    switch to serial input of values\r\n");
 				Serial.print(" +    switch to RC input of values\r\n\r\n");
 				// serialreceivestate = SERIALSTATEIDLE; // just for the coding style
+			}
+			else if (IncomingByte == 's')
+			{
+				// Mute sound (the evil way)
+				pinMode(SPEAKER_OUT_PIN, INPUT);
+			}
+			else if (IncomingByte == 'S')
+			{
+				// Unmute sound
+				pinMode(SPEAKER_OUT_PIN, OUTPUT);
 			}
 			else if (IncomingByte == '!')
 			{
@@ -459,11 +472,14 @@ void loop()
 	}
 #endif
 
+#define RC_SWITCH(SwitchIn) \
+		(((SwitchIn > (SERVOMSMID + 2*SERVONEUTR)) || (SwitchIn < (SERVOMSMID - 2*SERVONEUTR))) && \
+						(SwitchIn < (SERVOMSMAX + 2*SERVONEUTR)) && (SwitchIn > (SERVOMSMIN - 2*SERVONEUTR)))
+
 #ifndef MODDEDTX
 	if (bUpdateFlags & (1 << (5 - 1 )))
 	{
-		if (((Switch1In > (SERVOMSMID + 2*SERVONEUTR)) || (Switch1In < (SERVOMSMID - 2*SERVONEUTR))) &&
-				Switch1In < SERVOMSMAX + 2*SERVONEUTR && Switch1In > SERVOMSMAX - 2*SERVONEUTR)
+		if (RC_SWITCH(Switch1In))
 		{
 			digitalWrite(LIGHTS_OUT_PIN, 1);
 		}
@@ -474,14 +490,16 @@ void loop()
 	}
 	if (bUpdateFlags & (1 << (6 - 1 )))
 	{
-		if (((Switch2In > (SERVOMSMID + 2*SERVONEUTR)) || (Switch2In < (SERVOMSMID - 2*SERVONEUTR))) &&
-				Switch2In < SERVOMSMAX + 2*SERVONEUTR && Switch2In > SERVOMSMAX - 2*SERVONEUTR)
+		if (RC_SWITCH(Switch2In))
 		{
 #ifdef ORIGINAL_SOUND_MODULE
 			digitalWrite(HORN_OUT_PIN, 1);
 #else // ORIGINAL_SOUND_MODULE
+			if(soundqueuecount < 2) // prevent retriggering the sound
+			{
 			soundplayer_play_ds((uint16_t) &sound_feuerwehr_btc, sound_feuerwehr_btc_len, SOUND_FORMAT_BTC,
 					20);
+			}
 #endif // ORIGINAL_SOUND_MODULE
 		}
 		else
@@ -547,6 +565,16 @@ void loop()
 	if ((millis() - lasthbridgedelay) > HBRIDGEDELAY)
 	{
 		motor1_speed = dohbridge_pwm(Motor1ThrottleIn, MOTOR1_HBRIDGEPIN0, MOTOR1_HBRIDGEPIN1, motor1_speed); // use pwm
+
+		if (motor1_speed < 0)
+		{
+			digitalWrite(BACKUP_LIGHTS_OUT_PIN, 1);
+		}
+		else
+		{
+			digitalWrite(BACKUP_LIGHTS_OUT_PIN, 0);
+		}
+
 		motor2_speed = dohbridge_onoffon(Motor2ThrottleIn, MOTOR2_HBRIDGEPIN0, MOTOR2_HBRIDGEPIN1, motor2_speed);
 		motor3_speed = dohbridge_onoffon(Motor3ThrottleIn, MOTOR3_HBRIDGEPIN0, MOTOR3_HBRIDGEPIN1, motor3_speed);
 
