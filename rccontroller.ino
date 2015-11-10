@@ -118,7 +118,7 @@ RX_ISR(4);
 RX_ISR(5);
 RX_ISR(6);
 
-unsigned long lastdelaytime;
+unsigned long lasttime_serialout;
 
 inline uint8_t dohbridge_pwm(uint16_t ThrottleIn, uint8_t hbridgepin0, uint8_t hbridgepin1, int8_t motorspeed)
 {
@@ -241,7 +241,7 @@ void setup()
 			sound_crankup_len, SOUND_FORMAT_PCM, 3);
 #endif // ORIGINAL_SOUND_MODULE
 
-	lastdelaytime = millis();
+	lasttime_serialout = millis();
 }
 
 
@@ -341,7 +341,7 @@ void loop()
 			else if (IncomingByte == '$')
 			{
 				// Force printing values
-				lastdelaytime = 0;
+				lasttime_serialout = 0;
 				doprint = 1;
 				// serialreceivestate = SERIALSTATEIDLE; // just for the coding style
 			}
@@ -594,7 +594,7 @@ void loop()
 #endif
 
 #ifdef USESERIAL
-	if (doprint && ((millis() - lastdelaytime) > 500)) // && bUpdateFlags)
+	if (doprint && ((millis() - lasttime_serialout) > 500)) // && bUpdateFlags)
 	{
 #ifdef DEBUG
 		Serial.print("AnalogMapped2Servo=");
@@ -621,17 +621,35 @@ void loop()
 		Serial.print("; CH6=");
 		Serial.println(Aux2In); // TODO: To be used for mode switching?
 #endif
-		lastdelaytime = millis();
+		lasttime_serialout = millis();
 	}
 #endif
 
 	bUpdateFlags = 0;
 
-	static uint32_t lastblinklooptime = 0;
-	if ((millis() - lastblinklooptime) > 500)
+	// Generate blink sequence for the warning lights
+	static uint32_t lastttime_blink = 0;
+	static uint8_t blinkstate = 0;
+	if ((millis() - lastttime_blink) > 200)
 	{
-
-		lastblinklooptime = millis();
+		switch (blinkstate)
+		{
+			case 0:
+			case 2:
+				digitalWrite(BLINK_OUT_PIN, HIGH);
+				break;
+			case 1:
+				digitalWrite(BLINK_OUT_PIN, LOW);
+				break;
+			case 3:
+				digitalWrite(BLINK_OUT_PIN, LOW);
+				break;
+			case 5:
+				blinkstate = UINT8_MAX;
+				break;
+		}
+		++blinkstate;
+		lastttime_blink = millis();
 	}
 
 }
