@@ -17,8 +17,8 @@
 //#define ORIGINAL_SOUND_MODULE // currently unused, TODO: get to know how it works, implement
 
 // Main motor (pwm speed controlled)
-#define MOTOR1_HBRIDGEPIN0 6
-#define MOTOR1_HBRIDGEPIN1 5
+#define MOTOR1_HBRIDGEPIN0 5
+#define MOTOR1_HBRIDGEPIN1 6
 // Winch (fwd/off/rev only)
 #define MOTOR2_HBRIDGEPIN0 2
 #define MOTOR2_HBRIDGEPIN1 12
