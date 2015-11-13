@@ -19,20 +19,20 @@
 // Main motor (pwm speed controlled)
 #define MOTOR1_HBRIDGEPIN0 5
 #define MOTOR1_HBRIDGEPIN1 6
-// Winch (fwd/off/rev only)
+// Platform lift motor (fwd/off/rev only)
 #define MOTOR2_HBRIDGEPIN0 2
 #define MOTOR2_HBRIDGEPIN1 12
-// Platform lift motor (fwd/off/rev only)
-#define MOTOR3_HBRIDGEPIN0 11
-#define MOTOR3_HBRIDGEPIN1 7
+// Winch (fwd/off/rev only)
+#define MOTOR3_HBRIDGEPIN0 7
+#define MOTOR3_HBRIDGEPIN1 11
 
 // channel in pins from the receiver
 #define CHAN1_IN_PIN A0
 #define CHAN2_IN_PIN A1
-#define CHAN3_IN_PIN A2
-#define CHAN4_IN_PIN A3
-#define CHAN5_IN_PIN A4
-#define CHAN6_IN_PIN A5
+#define CHAN3_IN_PIN A3
+#define CHAN4_IN_PIN A2
+#define CHAN5_IN_PIN A5
+#define CHAN6_IN_PIN A4
 
 #define MAXCHAN 6
 
@@ -630,26 +630,34 @@ void loop()
 	// Generate blink sequence for the warning lights
 	static uint32_t lastttime_blink = 0;
 	static uint8_t blinkstate = 0;
-	if ((millis() - lastttime_blink) > 200)
+	if (RC_SWITCH(Switch1In))
 	{
-		switch (blinkstate)
+		if ((millis() - lastttime_blink) > 200)
 		{
-			case 0:
-			case 2:
-				digitalWrite(BLINK_OUT_PIN, HIGH);
-				break;
-			case 1:
-				digitalWrite(BLINK_OUT_PIN, LOW);
-				break;
-			case 3:
-				digitalWrite(BLINK_OUT_PIN, LOW);
-				break;
-			case 5:
-				blinkstate = UINT8_MAX;
-				break;
+			switch (blinkstate)
+			{
+				case 0:
+				case 2:
+					digitalWrite(BLINK_OUT_PIN, HIGH);
+					break;
+				case 1:
+					digitalWrite(BLINK_OUT_PIN, LOW);
+					break;
+				case 3:
+					digitalWrite(BLINK_OUT_PIN, LOW);
+					break;
+				case 5:
+					blinkstate = UINT8_MAX;
+					break;
+			}
+			++blinkstate;
+			lastttime_blink = millis();
 		}
-		++blinkstate;
-		lastttime_blink = millis();
 	}
+	else
+	{
+		digitalWrite(LIGHTS_OUT_PIN, 0);
+		blinkstate = 0;
 
+	}
 }
